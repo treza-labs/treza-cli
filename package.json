@@ -1,0 +1,55 @@
+{
+  "name": "@treza/cli",
+  "version": "1.0.0",
+  "description": "Command-line interface for the Treza platform - manage enclaves, KYC proofs, and more",
+  "main": "dist/index.js",
+  "bin": {
+    "treza": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc -w",
+    "start": "node dist/index.js",
+    "lint": "eslint src --ext .ts",
+    "prepublishOnly": "npm run build",
+    "link:local": "npm run build && npm link"
+  },
+  "keywords": [
+    "treza",
+    "cli",
+    "enclave",
+    "kyc",
+    "zero-knowledge",
+    "privacy",
+    "blockchain"
+  ],
+  "author": "Treza Labs",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/treza-labs/treza-cli.git"
+  },
+  "homepage": "https://trezalabs.com",
+  "bugs": {
+    "url": "https://github.com/treza-labs/treza-cli/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "conf": "^13.0.1",
+    "ora": "^8.0.1",
+    "prompts": "^2.4.2",
+    "table": "^6.8.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/prompts": "^2.4.9",
+    "typescript": "^5.7.2"
+  }
+}
