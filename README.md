@@ -35,11 +35,20 @@ treza config init
 # List your enclaves
 treza enclave list
 
-# Create a new enclave
-treza enclave create --name "My Secure Enclave" --region us-east-1
+# Create an enclave from a Docker image
+treza enclave create \
+  --name "My Enclave" \
+  --source-type registry \
+  --image nginx:latest \
+  --region us-west-2
 
-# Verify a KYC proof
-treza kyc verify <proof-id>
+# Create an enclave from a GitHub repository
+treza enclave create \
+  --name "My App Enclave" \
+  --source-type github \
+  --github-repo https://github.com/my-org/my-app \
+  --github-branch main \
+  --region us-west-2
 ```
 
 ## Commands
@@ -63,6 +72,8 @@ treza config clear
 
 ### Enclaves
 
+#### List & inspect
+
 ```bash
 # List all enclaves
 treza enclave list
@@ -70,20 +81,83 @@ treza enc ls              # alias
 
 # Get enclave details
 treza enclave get <id>
+```
 
-# Create a new enclave
-treza enclave create
-treza enclave create --name "Bot" --region us-east-1 --provider aws-nitro-enclave
+#### Create
 
-# Lifecycle management
+Enclaves support three deployment sources:
+
+**From a public Docker / container registry image:**
+
+```bash
+treza enclave create \
+  --name "My Enclave" \
+  --source-type registry \
+  --image nginx:latest \
+  --region us-west-2 \
+  --instance-type m6i.xlarge \
+  --cpu 2 \
+  --memory 1024
+```
+
+**From a GitHub repository** (Treza builds the image automatically):
+
+```bash
+treza enclave create \
+  --name "My App Enclave" \
+  --source-type github \
+  --github-repo https://github.com/my-org/my-app \
+  --github-branch main \
+  --github-token ghp_xxxxxxxxxxxx \
+  --region us-west-2
+```
+
+> Your repository must contain a `Dockerfile` at its root. The build status will progress through `PENDING_BUILD → BUILDING → PENDING_DEPLOY → DEPLOYING → DEPLOYED`.
+
+**From a private container registry:**
+
+```bash
+treza enclave create \
+  --name "My Private Enclave" \
+  --source-type private-registry \
+  --image registry.example.com/my-org/my-app:latest \
+  --registry-url registry.example.com \
+  --registry-username myuser \
+  --registry-password mypassword \
+  --region us-west-2
+```
+
+#### Provider & hardware options
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--provider <id>` | Provider ID | `aws-nitro` |
+| `--instance-type <type>` | EC2 instance type | `m6i.xlarge` |
+| `--cpu <count>` | vCPU count for the enclave | `2` |
+| `--memory <mib>` | Memory in MiB for the enclave | `1024` |
+| `--workload-type <type>` | `service` or `task` | `service` |
+
+#### Lifecycle management
+
+```bash
 treza enclave pause <id>
 treza enclave resume <id>
 treza enclave terminate <id>
 treza enclave delete <id>
+```
 
-# View logs
+#### Logs
+
+```bash
+# Application logs (default)
 treza enclave logs <id>
 treza enclave logs <id> --type application --limit 100
+
+# Build logs (for GitHub-sourced enclaves)
+treza enclave logs <id> --type build
+
+# System logs
+treza enclave logs <id> --type system
 ```
 
 ### KYC Verification
@@ -138,9 +212,9 @@ The CLI stores configuration in a local config file:
 
 | Setting | Description | Default |
 |---------|-------------|---------|
-| `walletAddress` | Your Ethereum/Solana wallet address | Required |
+| `walletAddress` | Your Ethereum wallet address | Required |
 | `apiUrl` | Treza API endpoint | `https://app.trezalabs.com` |
-| `apiKey` | Optional API key for authenticated requests | - |
+| `apiKey` | Optional API key for authenticated requests | — |
 
 Configuration is stored at:
 - macOS: `~/Library/Preferences/treza-cli-nodejs/config.json`
@@ -149,27 +223,52 @@ Configuration is stored at:
 
 ## Examples
 
-### Create and manage an enclave workflow
+### Deploy from a GitHub repository
 
 ```bash
 # Configure CLI
 treza config init
 
-# Create a new enclave
-treza enclave create --name "Trading Bot" --region us-east-1
+# Create an enclave that builds from your GitHub repo
+treza enclave create \
+  --name "Demo App" \
+  --source-type github \
+  --github-repo https://github.com/my-org/my-app \
+  --github-branch main \
+  --github-token ghp_xxxxxxxxxxxx \
+  --region us-west-2
 
-# Wait for deployment, then check status
-treza enclave get enc_123456789
+# Monitor build progress
+treza enclave logs <id> --type build
 
-# View application logs
-treza enclave logs enc_123456789 --type application
+# Once status is DEPLOYED, view application logs
+treza enclave logs <id> --type application
+```
 
-# Schedule a task
-treza task create --name "Hourly Check" --enclave enc_123456789 --schedule "0 * * * *"
+### Deploy from Docker Hub
 
-# When done, terminate and clean up
-treza enclave terminate enc_123456789 --force
-treza enclave delete enc_123456789 --force
+```bash
+treza enclave create \
+  --name "Nginx Enclave" \
+  --source-type registry \
+  --image nginx:latest \
+  --region us-west-2
+
+# Check status
+treza enclave get <id>
+```
+
+### Deploy from a private registry
+
+```bash
+treza enclave create \
+  --name "Internal Service" \
+  --source-type private-registry \
+  --image registry.example.com/my-org/service:v1.0.0 \
+  --registry-url registry.example.com \
+  --registry-username myuser \
+  --registry-password mypassword \
+  --region us-west-2
 ```
 
 ### Verify KYC proofs
@@ -191,10 +290,24 @@ treza enclave list --json | jq '.[] | select(.status == "DEPLOYED")'
 # Create enclave non-interactively
 treza enclave create \
   --name "Automated Enclave" \
-  --description "Created via script" \
+  --source-type registry \
+  --image my-org/my-service:latest \
   --region us-west-2 \
-  --provider aws-nitro-enclave
+  --provider aws-nitro
 ```
+
+## Enclave Status Lifecycle
+
+| Status | Description |
+|--------|-------------|
+| `PENDING_BUILD` | Waiting to start building from GitHub source |
+| `BUILDING` | AWS CodeBuild is building the Docker image |
+| `BUILD_FAILED` | Build failed — check build logs |
+| `PENDING_DEPLOY` | Image ready, waiting to deploy |
+| `DEPLOYING` | EC2 Nitro instance is being provisioned |
+| `DEPLOYED` | Running and healthy |
+| `PAUSED` | Instance stopped |
+| `TERMINATED` | Instance terminated |
 
 ## Development
 
@@ -225,7 +338,7 @@ treza --help
 
 ## Support
 
-- **Documentation**: [docs.treza.xyz](https://docs.treza.xyz)
+- **Documentation**: [docs.trezalabs.com](https://docs.trezalabs.com)
 - **Issues**: [GitHub Issues](https://github.com/treza-labs/treza-cli/issues)
 - **Website**: [trezalabs.com](https://trezalabs.com)
 
