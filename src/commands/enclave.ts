@@ -110,36 +110,66 @@ enclaveCommand
   .option('-n, --name <name>', 'Enclave name')
   .option('-d, --description <desc>', 'Enclave description')
   .option('-r, --region <region>', 'Deployment region')
-  .option('-p, --provider <provider>', 'Provider ID', 'aws-nitro-enclave')
+  .option('-p, --provider <provider>', 'Provider ID', 'aws-nitro')
+  // Source type
+  .option('--source-type <type>', 'Deployment source: registry (default), github, private-registry')
+  // Registry source
+  .option('-i, --image <image>', 'Docker image URI (e.g. nginx:alpine, myorg/myapp:latest)')
+  // GitHub source
+  .option('--github-repo <owner/repo>', 'GitHub repository to build from (e.g. acme/my-api)')
+  .option('--github-branch <branch>', 'Branch to build from', 'main')
+  .option('--github-token <token>', 'GitHub personal access token (for private repos)')
+  // Private registry source
+  .option('--registry-url <url>', 'Private registry URL (e.g. ghcr.io, 123.dkr.ecr.us-east-1.amazonaws.com)')
+  .option('--registry-username <user>', 'Registry username or access key ID')
+  .option('--registry-password <pass>', 'Registry password or token')
+  // Instance config
+  .option('--instance-type <type>', 'EC2 instance type (e.g. m6i.xlarge, c6i.xlarge)', 'm6i.xlarge')
+  .option('--cpu <count>', 'vCPU count to allocate to the enclave (2, 4, 8, 16)', '2')
+  .option('--memory <mib>', 'Memory in MiB to allocate (1024, 2048, 4096, 8192, 16384)', '1024')
+  // Workload config
+  .option('-w, --workload-type <type>', 'Workload type: batch, service, or daemon', 'service')
+  .option('--health-path <path>', 'Health check path for service workloads', '/health')
+  .option('--health-interval <seconds>', 'Health check interval in seconds', '30')
+  .option('--aws-services <services>', 'Comma-separated AWS services to proxy (e.g. kms,s3)')
+  .option('--expose-ports <ports>', 'Comma-separated ports the app listens on')
   .option('--json', 'Output as JSON')
   .action(async (options) => {
     requireConfig();
 
     let { name, description, region, provider } = options;
+    let sourceType: 'registry' | 'github' | 'private-registry' = options.sourceType || 'registry';
 
-    // Interactive prompts if options not provided
+    // If a GitHub flag is provided but --source-type wasn't specified, infer it
+    if (!options.sourceType && options.githubRepo) {
+      sourceType = 'github';
+    } else if (!options.sourceType && options.registryUrl) {
+      sourceType = 'private-registry';
+    }
+
+    // Fetch providers for interactive prompts
+    const spinner0 = ora('Loading providers...').start();
+    let providers: api.Provider[] = [];
+    try {
+      const result = await api.getProviders();
+      providers = result.providers;
+      spinner0.stop();
+    } catch {
+      spinner0.stop();
+      output.warn('Could not load providers, using defaults');
+      providers = [{ id: 'aws-nitro', name: 'AWS Nitro', description: '', regions: ['us-east-1', 'us-west-2', 'eu-west-1'] }];
+    }
+
+    const selectedProvider = providers.find((p) => p.id === provider) || providers[0];
+
+    // ── Prompt for basic info ──────────────────────────────────────────────
     if (!name || !region) {
-      // Fetch providers for region selection
-      const spinner = ora('Loading providers...').start();
-      let providers: api.Provider[] = [];
-      try {
-        const result = await api.getProviders();
-        providers = result.providers;
-        spinner.stop();
-      } catch {
-        spinner.stop();
-        output.warn('Could not load providers, using defaults');
-        providers = [{ id: 'aws-nitro-enclave', name: 'AWS Nitro', description: '', regions: ['us-east-1', 'us-west-2', 'eu-west-1'] }];
-      }
-
-      const selectedProvider = providers.find((p) => p.id === provider) || providers[0];
-
-      const response = await prompts([
+      const basicResponse = await prompts([
         {
           type: name ? null : 'text',
           name: 'name',
           message: 'Enclave name',
-          validate: (v) => (v ? true : 'Name is required'),
+          validate: (v: string) => (v ? true : 'Name is required'),
         },
         {
           type: description ? null : 'text',
@@ -154,9 +184,9 @@ enclaveCommand
         },
       ]);
 
-      name = name || response.name;
-      description = description || response.description;
-      region = region || response.region;
+      name = name || basicResponse.name;
+      description = description || basicResponse.description;
+      region = region || basicResponse.region;
 
       if (!name || !region) {
         output.error('Cancelled');
@@ -164,16 +194,166 @@ enclaveCommand
       }
     }
 
-    const spinner = ora('Creating enclave...').start();
+    // ── Prompt for source type if not provided ─────────────────────────────
+    if (!options.sourceType && !options.githubRepo && !options.registryUrl) {
+      const sourceResponse = await prompts({
+        type: 'select',
+        name: 'sourceType',
+        message: 'Deployment source',
+        choices: [
+          { title: 'Container Registry  — Docker Hub, ECR Public, or any public image', value: 'registry' },
+          { title: 'GitHub Repository   — Treza auto-builds from your repo', value: 'github' },
+          { title: 'Private Registry    — Your own registry with credentials', value: 'private-registry' },
+        ],
+        initial: 0,
+      });
+      sourceType = sourceResponse.sourceType || 'registry';
+    }
+
+    // ── Prompt for source-specific details ────────────────────────────────
+    let dockerImage = options.image || '';
+    let githubRepo = options.githubRepo || '';
+    let githubBranch = options.githubBranch || 'main';
+    let githubToken = options.githubToken || '';
+    let registryUrl = options.registryUrl || '';
+    let registryUsername = options.registryUsername || '';
+    let registryPassword = options.registryPassword || '';
+
+    if (sourceType === 'registry' && !dockerImage) {
+      const r = await prompts({
+        type: 'text',
+        name: 'dockerImage',
+        message: 'Docker image URI (e.g. nginx:alpine)',
+        validate: (v: string) => (v ? true : 'Image URI is required'),
+      });
+      dockerImage = r.dockerImage || '';
+    }
+
+    if (sourceType === 'github') {
+      if (!githubRepo) {
+        const r = await prompts([
+          {
+            type: 'text',
+            name: 'githubRepo',
+            message: 'GitHub repository (owner/repo)',
+            validate: (v: string) => (v.includes('/') ? true : 'Must be owner/repo format'),
+          },
+          {
+            type: 'text',
+            name: 'githubBranch',
+            message: 'Branch',
+            initial: 'main',
+          },
+          {
+            type: 'password',
+            name: 'githubToken',
+            message: 'GitHub token (for private repos, leave blank for public)',
+          },
+        ]);
+        githubRepo = r.githubRepo || '';
+        githubBranch = r.githubBranch || 'main';
+        githubToken = r.githubToken || '';
+      }
+    }
+
+    if (sourceType === 'private-registry') {
+      const missingFields = !registryUrl || !dockerImage;
+      if (missingFields) {
+        const r = await prompts([
+          { type: registryUrl ? null : 'text', name: 'registryUrl', message: 'Registry URL (e.g. ghcr.io)' },
+          { type: dockerImage ? null : 'text', name: 'dockerImage', message: 'Image URI (e.g. myorg/myapp:latest)' },
+          { type: registryUsername ? null : 'text', name: 'registryUsername', message: 'Username' },
+          { type: registryPassword ? null : 'password', name: 'registryPassword', message: 'Password / token' },
+        ]);
+        registryUrl = registryUrl || r.registryUrl || '';
+        dockerImage = dockerImage || r.dockerImage || '';
+        registryUsername = registryUsername || r.registryUsername || '';
+        registryPassword = registryPassword || r.registryPassword || '';
+      }
+    }
+
+    // ── Prompt for workload config ─────────────────────────────────────────
+    if (!options.workloadType) {
+      const r = await prompts({
+        type: 'select',
+        name: 'workloadType',
+        message: 'Workload type',
+        choices: [
+          { title: 'Batch (run-to-completion)', value: 'batch' },
+          { title: 'Service (long-running HTTP server)', value: 'service' },
+          { title: 'Daemon (background process)', value: 'daemon' },
+        ],
+      });
+      if (r.workloadType) options.workloadType = r.workloadType;
+    }
+
+    // ── Build providerConfig ───────────────────────────────────────────────
+    const providerConfig: Record<string, unknown> = {
+      sourceType,
+      instanceType: options.instanceType || 'm6i.xlarge',
+      cpuCount: options.cpu || '2',
+      memoryMiB: options.memory || '1024',
+      workloadType: options.workloadType || 'service',
+    };
+    if (dockerImage) {
+      providerConfig.dockerImage = dockerImage;
+    }
+    if (options.workloadType) {
+      providerConfig.workloadType = options.workloadType;
+    }
+    if (options.healthPath && options.workloadType === 'service') {
+      providerConfig.healthCheckPath = options.healthPath;
+    }
+    if (options.healthInterval) {
+      providerConfig.healthCheckInterval = options.healthInterval;
+    }
+    if (options.awsServices) {
+      providerConfig.awsServices = options.awsServices;
+    }
+    if (options.exposePorts) {
+      providerConfig.exposePorts = options.exposePorts;
+    }
+
+    // ── Submit ─────────────────────────────────────────────────────────────
+    const spinnerMsg = sourceType === 'github' ? 'Creating enclave and starting build...' : 'Creating enclave...';
+    const spinner = ora(spinnerMsg).start();
 
     try {
-      const { enclave } = await api.createEnclave({
+      const payload: Parameters<typeof api.createEnclave>[0] = {
         name,
         description: description || '',
         region,
-        providerId: provider,
-      });
-      spinner.succeed('Enclave created!');
+        providerId: selectedProvider.id,
+        providerConfig,
+        sourceType,
+      };
+
+      if (sourceType === 'github') {
+        payload.githubConnection = {
+          isConnected: true,
+          username: '',
+          selectedRepo: githubRepo,
+          selectedBranch: githubBranch,
+          ...(githubToken && { accessToken: githubToken }),
+        };
+      }
+
+      if (sourceType === 'private-registry' && registryUrl) {
+        payload.privateRegistry = {
+          registryUrl,
+          username: registryUsername,
+          password: registryPassword,
+        };
+        payload.dockerImage = dockerImage;
+      }
+
+      const { enclave } = await api.createEnclave(payload);
+
+      if (sourceType === 'github') {
+        spinner.succeed(`Enclave created — build started (${enclave.buildId ? enclave.buildId.split(':').pop() : 'queued'})`);
+      } else {
+        spinner.succeed('Enclave created!');
+      }
 
       if (options.json) {
         output.json(enclave);
@@ -183,13 +363,28 @@ enclaveCommand
       console.log('');
       output.keyValue('ID', enclave.id);
       output.keyValue('Status', output.statusColor(enclave.status));
+      output.keyValue('Source', sourceType);
       output.keyValue('Region', enclave.region);
+      if (sourceType === 'github') {
+        output.keyValue('Repo', githubRepo);
+        output.keyValue('Branch', githubBranch);
+        if (enclave.buildStatus) {
+          output.keyValue('Build Status', enclave.buildStatus);
+        }
+      } else if (sourceType === 'registry') {
+        output.keyValue('Image', dockerImage);
+      } else if (sourceType === 'private-registry') {
+        output.keyValue('Registry', registryUrl);
+        output.keyValue('Image', dockerImage);
+      }
       console.log('');
       console.log(chalk.gray(`View details: treza enclave get ${enclave.id}`));
+      console.log(chalk.gray(`Stream logs:  treza enclave logs ${enclave.id}${sourceType === 'github' ? ' --type build' : ''}`));
     } catch (err) {
       spinner.stop();
       if (err instanceof api.ApiError) {
-        output.error(`Failed to create enclave: ${err.message}`);
+        const details = (err.details as { details?: string[] })?.details;
+        output.error(`Failed to create enclave: ${err.message}${details ? '\n  ' + details.join('\n  ') : ''}`);
       } else {
         output.error(`Failed to create enclave: ${(err as Error).message}`);
       }
@@ -319,7 +514,7 @@ enclaveCommand
 enclaveCommand
   .command('logs <id>')
   .description('View enclave logs')
-  .option('-t, --type <type>', 'Log type: all, ecs, application, errors, lambda, stepfunctions', 'all')
+  .option('-t, --type <type>', 'Log type: all, ecs, application, errors, lambda, stepfunctions, build', 'all')
   .option('-n, --limit <limit>', 'Number of log entries', '50')
   .option('--json', 'Output as JSON')
   .action(async (id, options) => {

@@ -2,6 +2,7 @@
   "name": "@treza/cli",
   "version": "1.0.0",
   "description": "Command-line interface for the Treza platform - manage enclaves, KYC proofs, and more",
+  "type": "module",
   "main": "dist/index.js",
   "bin": {
     "treza": "./dist/index.js"
