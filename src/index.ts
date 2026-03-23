@@ -7,6 +7,7 @@ import { enclaveCommand } from './commands/enclave.js';
 import { kycCommand } from './commands/kyc.js';
 import { providerCommand } from './commands/provider.js';
 import { taskCommand } from './commands/task.js';
+import { piiCommand } from './commands/pii.js';
 import { getConfig } from './utils/config.js';
 
 const VERSION = '1.0.0';
@@ -42,6 +43,7 @@ program.addCommand(enclaveCommand);
 program.addCommand(kycCommand);
 program.addCommand(providerCommand);
 program.addCommand(taskCommand);
+program.addCommand(piiCommand);
 
 // Custom help
 program.on('--help', () => {

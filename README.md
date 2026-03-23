@@ -173,6 +173,23 @@ treza kyc get <proof-id>
 treza kyc status <proof-id>
 ```
 
+### PII / TEE
+
+Requires an API key with `pii:*` permissions (see platform **API Keys**). Optional: `treza config set piiProcessorEnclaveId enc_...` and `treza config set complianceMode gdpr`.
+
+```bash
+# Submit JSON: { "type": "SSN", "payload": "opaque-string", "consentGiven": true }
+treza pii submit --file ./test-pii.json --enclave enc_12345
+
+treza pii retrieve --pii-id pii_abc123 --purpose "credit_check"
+treza pii delete --pii-id pii_abc123
+
+treza pii consent grant --data-type SSN --recipient "0x..."
+treza pii consent revoke --consent-id consent_xyz
+
+treza pii audit --user-id 0xYourAddress --start-date 2026-01-01
+```
+
 ### Tasks
 
 ```bash
@@ -215,6 +232,8 @@ The CLI stores configuration in a local config file:
 | `walletAddress` | Your Ethereum wallet address | Required |
 | `apiUrl` | Treza API endpoint | `https://app.trezalabs.com` |
 | `apiKey` | Optional API key for authenticated requests | — |
+| `piiProcessorEnclaveId` | Default `PII_PROCESSOR` enclave for PII CLI | — |
+| `complianceMode` | Label for tooling (`gdpr`, `ccpa`, `hipaa`, `off`) | `off` |
 
 Configuration is stored at:
 - macOS: `~/Library/Preferences/treza-cli-nodejs/config.json`

@@ -205,3 +205,39 @@ export async function deleteTask(id: string): Promise<{ message: string }> {
     params: { id, wallet },
   });
 }
+
+// PII / TEE API
+export async function piiIngest(body: Record<string, unknown>): Promise<unknown> {
+  return apiRequest('/api/pii/ingest', { method: 'POST', body });
+}
+
+export async function piiRetrieve(body: Record<string, unknown>): Promise<unknown> {
+  return apiRequest('/api/pii/retrieve', { method: 'POST', body });
+}
+
+export async function piiDelete(piiId: string): Promise<unknown> {
+  return apiRequest('/api/pii/delete', { method: 'POST', body: { piiId } });
+}
+
+export async function piiConsentGrant(body: Record<string, unknown>): Promise<unknown> {
+  return apiRequest('/api/pii/consent', { method: 'POST', body });
+}
+
+export async function piiConsentRevoke(consentId: string): Promise<unknown> {
+  return apiRequest('/api/pii/consent', {
+    method: 'POST',
+    body: { revoke: true, consentId },
+  });
+}
+
+export async function piiAudit(params: { wallet?: string; startDate?: string; limit?: string }): Promise<unknown> {
+  const wallet = params.wallet || getWalletAddress();
+  const q: Record<string, string> = { walletAddress: wallet, limit: params.limit || '100' };
+  if (params.startDate) q.startDate = params.startDate;
+  return apiRequest('/api/pii/audit', { params: q });
+}
+
+/** KYC → PII bridge (verified proof in DynamoDB + encrypted PII row). */
+export async function kycPiiBridge(body: Record<string, unknown>): Promise<unknown> {
+  return apiRequest('/api/kyc/pii-bridge', { method: 'POST', body });
+}
