@@ -32,12 +32,17 @@ export async function apiRequest<T>(
     url += `?${searchParams.toString()}`;
   }
 
+  const walletAddress = getWalletAddress();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
 
   if (apiKey) {
     headers['Authorization'] = `Bearer ${apiKey}`;
+  }
+
+  if (walletAddress) {
+    headers['x-treza-wallet'] = walletAddress;
   }
 
   const response = await fetch(url, {
@@ -70,6 +75,15 @@ export interface Enclave {
   walletAddress: string;
   createdAt: string;
   updatedAt: string;
+  sourceType?: 'registry' | 'github' | 'private-registry';
+  buildStatus?: string;
+  buildId?: string;
+  githubConnection?: {
+    isConnected: boolean;
+    username: string;
+    selectedRepo?: string;
+    selectedBranch?: string;
+  };
 }
 
 export async function getEnclaves(): Promise<{ enclaves: Enclave[] }> {
@@ -87,6 +101,20 @@ export async function createEnclave(data: {
   region: string;
   providerId: string;
   providerConfig?: Record<string, unknown>;
+  sourceType?: 'registry' | 'github' | 'private-registry';
+  githubConnection?: {
+    isConnected: boolean;
+    username: string;
+    selectedRepo: string;
+    selectedBranch: string;
+    accessToken?: string;
+  };
+  privateRegistry?: {
+    registryUrl: string;
+    username: string;
+    password: string;
+  };
+  dockerImage?: string;
 }): Promise<{ enclave: Enclave }> {
   const wallet = getWalletAddress();
   return apiRequest('/api/enclaves', {
