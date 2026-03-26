@@ -157,3 +157,42 @@ kycCommand
       process.exit(1);
     }
   });
+
+kycCommand
+  .command('pii-bridge')
+  .description('Link verified KYC proof (API) to encrypted PII storage (requires pii:write on API key)')
+  .requiredOption('--proof-id <id>', 'KYC proof UUID from POST /api/kyc/proof')
+  .requiredOption('--commitment <hex>', 'Same commitment hex as stored on the proof')
+  .requiredOption('--type <t>', 'PII type: SSN | PASSPORT | DRIVERS_LICENSE | MEDICAL_RECORD')
+  .requiredOption('--payload <text>', 'Opaque payload string (encrypted server-side)')
+  .option('--json', 'Output as JSON')
+  .action(async (options) => {
+    const spinner = ora('Bridging KYC → PII…').start();
+    try {
+      const res = await api.kycPiiBridge({
+        proofId: options.proofId,
+        commitment: options.commitment,
+        type: options.type,
+        payload: options.payload,
+        consentGiven: true,
+      });
+      spinner.stop();
+      if (options.json) {
+        output.json(res);
+        return;
+      }
+      output.success('PII row created and linked to KYC proof');
+      console.log('');
+      const r = res as Record<string, string>;
+      output.keyValue('piiId', r.piiId || '');
+      output.keyValue('piiArtifactHash', r.piiArtifactHash || '');
+      if (r.onChainHint) {
+        console.log('');
+        output.info(r.onChainHint);
+      }
+    } catch (err) {
+      spinner.stop();
+      output.error(err instanceof api.ApiError ? err.message : (err as Error).message);
+      process.exit(1);
+    }
+  });

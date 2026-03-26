@@ -32,12 +32,17 @@ export async function apiRequest<T>(
     url += `?${searchParams.toString()}`;
   }
 
+  const walletAddress = getWalletAddress();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
 
   if (apiKey) {
     headers['Authorization'] = `Bearer ${apiKey}`;
+  }
+
+  if (walletAddress) {
+    headers['x-treza-wallet'] = walletAddress;
   }
 
   const response = await fetch(url, {
@@ -70,6 +75,15 @@ export interface Enclave {
   walletAddress: string;
   createdAt: string;
   updatedAt: string;
+  sourceType?: 'registry' | 'github' | 'private-registry';
+  buildStatus?: string;
+  buildId?: string;
+  githubConnection?: {
+    isConnected: boolean;
+    username: string;
+    selectedRepo?: string;
+    selectedBranch?: string;
+  };
 }
 
 export async function getEnclaves(): Promise<{ enclaves: Enclave[] }> {
@@ -87,6 +101,20 @@ export async function createEnclave(data: {
   region: string;
   providerId: string;
   providerConfig?: Record<string, unknown>;
+  sourceType?: 'registry' | 'github' | 'private-registry';
+  githubConnection?: {
+    isConnected: boolean;
+    username: string;
+    selectedRepo: string;
+    selectedBranch: string;
+    accessToken?: string;
+  };
+  privateRegistry?: {
+    registryUrl: string;
+    username: string;
+    password: string;
+  };
+  dockerImage?: string;
 }): Promise<{ enclave: Enclave }> {
   const wallet = getWalletAddress();
   return apiRequest('/api/enclaves', {
@@ -204,4 +232,40 @@ export async function deleteTask(id: string): Promise<{ message: string }> {
     method: 'DELETE',
     params: { id, wallet },
   });
+}
+
+// PII / TEE API
+export async function piiIngest(body: Record<string, unknown>): Promise<unknown> {
+  return apiRequest('/api/pii/ingest', { method: 'POST', body });
+}
+
+export async function piiRetrieve(body: Record<string, unknown>): Promise<unknown> {
+  return apiRequest('/api/pii/retrieve', { method: 'POST', body });
+}
+
+export async function piiDelete(piiId: string): Promise<unknown> {
+  return apiRequest('/api/pii/delete', { method: 'POST', body: { piiId } });
+}
+
+export async function piiConsentGrant(body: Record<string, unknown>): Promise<unknown> {
+  return apiRequest('/api/pii/consent', { method: 'POST', body });
+}
+
+export async function piiConsentRevoke(consentId: string): Promise<unknown> {
+  return apiRequest('/api/pii/consent', {
+    method: 'POST',
+    body: { revoke: true, consentId },
+  });
+}
+
+export async function piiAudit(params: { wallet?: string; startDate?: string; limit?: string }): Promise<unknown> {
+  const wallet = params.wallet || getWalletAddress();
+  const q: Record<string, string> = { walletAddress: wallet, limit: params.limit || '100' };
+  if (params.startDate) q.startDate = params.startDate;
+  return apiRequest('/api/pii/audit', { params: q });
+}
+
+/** KYC → PII bridge (verified proof in DynamoDB + encrypted PII row). */
+export async function kycPiiBridge(body: Record<string, unknown>): Promise<unknown> {
+  return apiRequest('/api/kyc/pii-bridge', { method: 'POST', body });
 }

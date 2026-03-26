@@ -4,6 +4,10 @@ interface TrezaConfig {
   apiUrl: string;
   walletAddress: string;
   apiKey?: string;
+  /** Default Nitro PII_PROCESSOR enclave id for `treza pii` commands */
+  piiProcessorEnclaveId?: string;
+  /** Compliance labeling for client-side tooling (gdpr | ccpa | hipaa | off) */
+  complianceMode?: string;
 }
 
 const schema = {
@@ -18,6 +22,14 @@ const schema = {
   apiKey: {
     type: 'string' as const,
     default: '',
+  },
+  piiProcessorEnclaveId: {
+    type: 'string' as const,
+    default: '',
+  },
+  complianceMode: {
+    type: 'string' as const,
+    default: 'off',
   },
 };
 
@@ -48,4 +60,13 @@ export function getWalletAddress(): string {
 
 export function getApiKey(): string | undefined {
   return getConfig().get('apiKey') || undefined;
+}
+
+export function getPiiProcessorEnclaveId(): string | undefined {
+  const v = getConfig().get('piiProcessorEnclaveId');
+  return v ? String(v) : undefined;
+}
+
+export function getComplianceMode(): string {
+  return getConfig().get('complianceMode') || 'off';
 }
