@@ -123,7 +123,7 @@ configCommand
   .description('Set a configuration value')
   .action((key, value) => {
     const config = getConfig();
-    const validKeys = ['walletAddress', 'apiUrl', 'apiKey', 'redactApiKey', 'redactApiUrl'];
+    const validKeys = ['walletAddress', 'apiUrl', 'apiKey'];
 
     if (!validKeys.includes(key)) {
       output.error(`Invalid key: ${key}. Valid keys: ${validKeys.join(', ')}`);

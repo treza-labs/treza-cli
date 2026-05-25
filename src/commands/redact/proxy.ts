@@ -5,8 +5,8 @@ import {
   chatCompletionProxy,
   fetchAttestation,
   RedactApiError,
+  MissingCredentialsError,
 } from '../../utils/redact-api.js';
-import { resolveRedactCredentials, NoRedactKeyError } from '../../utils/redact-config.js';
 
 interface ProxyOptions {
   port?: string;
@@ -57,19 +57,8 @@ export const proxyCommand = new Command('proxy')
   .option('-p, --port <n>', 'Local port to listen on', String(DEFAULT_PORT))
   .option('--model-key <key>', 'Caller OpenAI key for the upstream call (defaults to OPENAI_API_KEY)')
   .option('--rehydrate', 'Substitute placeholders back to originals in responses (client-side only)', false)
-  .option('--api-key <key>', 'Override configured Treza redaction API key')
+  .option('--api-key <key>', 'Override configured Treza API key')
   .action(async (options: ProxyOptions) => {
-    let creds;
-    try {
-      creds = resolveRedactCredentials({ apiKey: options.apiKey });
-    } catch (err) {
-      if (err instanceof NoRedactKeyError) {
-        console.error(chalk.red(err.message));
-        process.exit(1);
-      }
-      throw err;
-    }
-
     const modelKey = options.modelKey || process.env.OPENAI_API_KEY;
     if (!modelKey) {
       console.error(
@@ -88,15 +77,15 @@ export const proxyCommand = new Command('proxy')
 
     let attest;
     try {
-      attest = await fetchAttestation(creds);
+      attest = await fetchAttestation({ apiKey: options.apiKey });
     } catch (err) {
-      console.error(
-        chalk.red(
-          `Failed to fetch attestation from ${creds.apiUrl}: ${(err as Error).message}`,
-        ),
-      );
-      if (err instanceof RedactApiError && err.statusCode === 401) {
-        console.error(chalk.yellow('Your API key may be invalid or expired. Try: treza redact trial'));
+      if (err instanceof MissingCredentialsError) {
+        console.error(chalk.red(err.message));
+        process.exit(1);
+      }
+      console.error(chalk.red(`Failed to fetch attestation: ${(err as Error).message}`));
+      if (err instanceof RedactApiError && err.statusCode === 403) {
+        console.error(chalk.yellow('Your API key is missing redact permissions. Contact your Treza account team.'));
       }
       process.exit(1);
     }
@@ -133,8 +122,9 @@ export const proxyCommand = new Command('proxy')
       }
 
       try {
-        const upstream = await chatCompletionProxy(creds, body, modelKey, {
+        const upstream = await chatCompletionProxy(body, modelKey, {
           rehydrate: options.rehydrate,
+          apiKey: options.apiKey,
         });
 
         let payload = upstream.body;
@@ -147,7 +137,11 @@ export const proxyCommand = new Command('proxy')
         send(res, upstream.status, payload);
 
         const ms = Date.now() - startedAt;
-        console.log(chalk.gray(`[${new Date().toISOString()}] POST /v1/chat/completions → ${upstream.status} (${ms}ms)`));
+        console.log(
+          chalk.gray(
+            `[${new Date().toISOString()}] POST /v1/chat/completions → ${upstream.status} (${ms}ms)`,
+          ),
+        );
       } catch (err) {
         const status = err instanceof RedactApiError ? err.statusCode || 502 : 502;
         const message =

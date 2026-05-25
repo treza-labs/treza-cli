@@ -1,8 +1,12 @@
 import { Command } from 'commander';
 import * as fs from 'fs';
 import chalk from 'chalk';
-import { redactText, RedactResult, RedactApiError } from '../../utils/redact-api.js';
-import { resolveRedactCredentials, NoRedactKeyError } from '../../utils/redact-config.js';
+import {
+  redactText,
+  RedactResult,
+  RedactApiError,
+  MissingCredentialsError,
+} from '../../utils/redact-api.js';
 
 async function readStdin(): Promise<string> {
   if (process.stdin.isTTY) return '';
@@ -45,7 +49,7 @@ export const runCommand = new Command('run')
   .option('--show-map', 'Also print the entity map (to stderr unless --json)', false)
   .option('--json', 'Emit { redacted, entities } as a single JSON object on stdout', false)
   .option('--out <file>', 'Write redacted text to a file instead of stdout')
-  .option('--api-key <key>', 'Override configured redaction API key (TEE mode only)')
+  .option('--api-key <key>', 'Override configured API key (TEE mode only)')
   .option('--local', 'Run redaction in-process (NOT ATTESTED, no audit log)', false)
   .action(async (file: string | undefined, options: RunOptions) => {
     let input: string;
@@ -73,21 +77,22 @@ export const runCommand = new Command('run')
         const { redactTextLocal } = await import('../../utils/redact-local.js');
         result = await redactTextLocal(input);
       } else {
-        const creds = resolveRedactCredentials({ apiKey: options.apiKey });
-        result = await redactText(creds, input);
+        result = await redactText(input, { apiKey: options.apiKey });
         bannerAttest = result.attestation
           ? { enclaveId: result.attestation.enclaveId, region: result.attestation.region }
           : undefined;
       }
     } catch (err) {
-      if (err instanceof NoRedactKeyError) {
+      if (err instanceof MissingCredentialsError) {
         console.error(chalk.red(err.message));
         process.exit(1);
       }
       if (err instanceof RedactApiError) {
         console.error(chalk.red(`Redaction failed: ${err.message}`));
         if (err.statusCode === 401) {
-          console.error(chalk.yellow('Your API key may be invalid or expired. Try: treza redact trial'));
+          console.error(chalk.yellow('Your API key may be invalid or your wallet header may not match the key owner.'));
+        } else if (err.statusCode === 403) {
+          console.error(chalk.yellow('Your API key is missing redact:run permission. Contact your Treza account team.'));
         }
         process.exit(1);
       }

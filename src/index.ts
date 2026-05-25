@@ -28,8 +28,9 @@ program
   .description('Command-line interface for the Treza platform')
   .version(VERSION, '-v, --version', 'Display version number')
   .hook('preAction', (thisCommand) => {
+    // Show banner for main commands (not for help/version)
     const commandName = thisCommand.args[0];
-    if (commandName && !['help', 'config', 'redact'].includes(commandName)) {
+    if (commandName && !['help', 'config'].includes(commandName)) {
       const config = getConfig();
       if (!config.get('apiUrl')) {
         console.log(chalk.yellow('\n⚠️  Not configured. Run: treza config init\n'));
@@ -54,7 +55,6 @@ program.on('--help', () => {
   console.log('  $ treza enclave list                   # List your enclaves');
   console.log('  $ treza enclave create --name "Bot"    # Create an enclave');
   console.log('  $ treza kyc verify <proof-id>          # Verify a KYC proof');
-  console.log('  $ treza redact trial                   # Get a free redaction trial key');
   console.log('  $ echo "..." | treza redact run --show-map  # Redact PII');
   console.log('  $ treza redact proxy                   # Local PII-redacting OpenAI proxy');
   console.log('');

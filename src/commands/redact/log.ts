@@ -1,8 +1,7 @@
 import { Command } from 'commander';
 import ora from 'ora';
 import chalk from 'chalk';
-import { getAuditLog, RedactApiError } from '../../utils/redact-api.js';
-import { resolveRedactCredentials, NoRedactKeyError } from '../../utils/redact-config.js';
+import { getAuditLog, RedactApiError, MissingCredentialsError } from '../../utils/redact-api.js';
 import * as output from '../../utils/output.js';
 
 interface LogOptions {
@@ -17,24 +16,14 @@ export const logCommand = new Command('log')
   .option('--limit <n>', 'Number of entries to show', '20')
   .option('--since <ts>', 'Only entries after timestamp (ISO 8601)')
   .option('--json', 'Emit results as a JSON array', false)
-  .option('--api-key <key>', 'Override configured redaction API key')
+  .option('--api-key <key>', 'Override configured API key')
   .action(async (options: LogOptions) => {
-    let creds;
-    try {
-      creds = resolveRedactCredentials({ apiKey: options.apiKey });
-    } catch (err) {
-      if (err instanceof NoRedactKeyError) {
-        console.error(chalk.red(err.message));
-        process.exit(1);
-      }
-      throw err;
-    }
-
     const spinner = options.json ? null : ora('Loading audit log…').start();
     try {
-      const res = await getAuditLog(creds, {
+      const res = await getAuditLog({
         limit: options.limit ? parseInt(options.limit, 10) : undefined,
         since: options.since,
+        apiKey: options.apiKey,
       });
       spinner?.succeed(`${res.entries.length} entries`);
 
@@ -57,8 +46,10 @@ export const logCommand = new Command('log')
       output.printTable(['Timestamp', 'Source', 'Entities', 'Request ID'], rows, { truncate: 60 });
     } catch (err) {
       spinner?.fail(err instanceof Error ? err.message : String(err));
-      if (err instanceof RedactApiError && err.statusCode === 401) {
-        console.error(chalk.yellow('Your API key may be invalid or expired. Try: treza redact trial'));
+      if (err instanceof MissingCredentialsError) {
+        console.error(chalk.red(err.message));
+      } else if (err instanceof RedactApiError && err.statusCode === 403) {
+        console.error(chalk.yellow('Your API key is missing redact:log permission. Contact your Treza account team.'));
       }
       process.exit(1);
     }
