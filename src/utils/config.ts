@@ -8,6 +8,10 @@ interface TrezaConfig {
   piiProcessorEnclaveId?: string;
   /** Compliance labeling for client-side tooling (gdpr | ccpa | hipaa | off) */
   complianceMode?: string;
+  /** API key for the redaction service (wallet-free) */
+  redactApiKey?: string;
+  /** Redaction service endpoint (defaults to the same host as apiUrl) */
+  redactApiUrl?: string;
 }
 
 const schema = {
@@ -30,6 +34,14 @@ const schema = {
   complianceMode: {
     type: 'string' as const,
     default: 'off',
+  },
+  redactApiKey: {
+    type: 'string' as const,
+    default: '',
+  },
+  redactApiUrl: {
+    type: 'string' as const,
+    default: 'https://app.trezalabs.com',
   },
 };
 
@@ -69,4 +81,16 @@ export function getPiiProcessorEnclaveId(): string | undefined {
 
 export function getComplianceMode(): string {
   return getConfig().get('complianceMode') || 'off';
+}
+
+export function getRedactApiKey(): string | undefined {
+  return getConfig().get('redactApiKey') || undefined;
+}
+
+export function setRedactApiKey(key: string): void {
+  getConfig().set('redactApiKey', key);
+}
+
+export function getRedactApiUrl(): string {
+  return getConfig().get('redactApiUrl') || getConfig().get('apiUrl') || 'https://app.trezalabs.com';
 }

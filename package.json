@@ -8,7 +8,8 @@
     "treza": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && npm run build:assets",
+    "build:assets": "node -e \"const fs=require('fs');const path=require('path');fs.mkdirSync('dist/utils',{recursive:true});fs.copyFileSync('src/utils/redact-manifest.json','dist/utils/redact-manifest.json');\"",
     "dev": "tsc -w",
     "start": "node dist/index.js",
     "lint": "eslint src --ext .ts",

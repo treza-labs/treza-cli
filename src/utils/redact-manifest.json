@@ -1,0 +1,44 @@
+{
+  "recognizerVersion": "0.1.0",
+  "placeholderMap": {
+    "private_person": "NAME",
+    "private_address": "ADDRESS",
+    "private_email": "EMAIL",
+    "private_phone": "PHONE",
+    "private_url": "URL",
+    "private_date": "DATE",
+    "account_number": "ACCOUNT",
+    "secret": "SECRET",
+    "SSN": "SSN",
+    "CREDIT_CARD": "CC",
+    "MRN": "MRN",
+    "DOB": "DOB"
+  },
+  "regexRecognizers": [
+    {
+      "type": "SSN",
+      "pattern": "\\b(?!000|666|9\\d{2})(\\d{3})-(?!00)(\\d{2})-(?!0000)(\\d{4})\\b",
+      "validator": "ssn_format"
+    },
+    {
+      "type": "CREDIT_CARD",
+      "pattern": "\\b(?:\\d[ -]?){13,19}\\b",
+      "validator": "luhn"
+    },
+    {
+      "type": "MRN",
+      "pattern": "\\b(?:MRN|Medical Record(?: Number)?)[:#\\s]*([A-Z0-9-]{4,12})\\b",
+      "validator": "none",
+      "captureGroup": 1
+    }
+  ],
+  "dobCueWords": [
+    "dob",
+    "born",
+    "date of birth",
+    "patient",
+    "mrn",
+    "medical record"
+  ],
+  "dobCueWindowChars": 64
+}

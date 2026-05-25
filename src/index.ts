@@ -8,6 +8,7 @@ import { kycCommand } from './commands/kyc.js';
 import { providerCommand } from './commands/provider.js';
 import { taskCommand } from './commands/task.js';
 import { piiCommand } from './commands/pii.js';
+import { redactCommand } from './commands/redact/index.js';
 import { getConfig } from './utils/config.js';
 
 const VERSION = '1.0.0';
@@ -27,9 +28,8 @@ program
   .description('Command-line interface for the Treza platform')
   .version(VERSION, '-v, --version', 'Display version number')
   .hook('preAction', (thisCommand) => {
-    // Show banner for main commands (not for help/version)
     const commandName = thisCommand.args[0];
-    if (commandName && !['help', 'config'].includes(commandName)) {
+    if (commandName && !['help', 'config', 'redact'].includes(commandName)) {
       const config = getConfig();
       if (!config.get('apiUrl')) {
         console.log(chalk.yellow('\n⚠️  Not configured. Run: treza config init\n'));
@@ -44,6 +44,7 @@ program.addCommand(kycCommand);
 program.addCommand(providerCommand);
 program.addCommand(taskCommand);
 program.addCommand(piiCommand);
+program.addCommand(redactCommand);
 
 // Custom help
 program.on('--help', () => {
@@ -53,6 +54,9 @@ program.on('--help', () => {
   console.log('  $ treza enclave list                   # List your enclaves');
   console.log('  $ treza enclave create --name "Bot"    # Create an enclave');
   console.log('  $ treza kyc verify <proof-id>          # Verify a KYC proof');
+  console.log('  $ treza redact trial                   # Get a free redaction trial key');
+  console.log('  $ echo "..." | treza redact run --show-map  # Redact PII');
+  console.log('  $ treza redact proxy                   # Local PII-redacting OpenAI proxy');
   console.log('');
   console.log('Documentation:');
   console.log(`  ${chalk.cyan('https://docs.treza.xyz/cli')}`);
