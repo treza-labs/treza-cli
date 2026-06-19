@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import ora from 'ora';
 import chalk from 'chalk';
 import * as api from '../utils/api.js';
+import { ApiError } from '../utils/api.js';
 import * as output from '../utils/output.js';
 import { getPiiProcessorEnclaveId, getComplianceMode } from '../utils/config.js';
 
@@ -110,29 +111,73 @@ consent
 
 piiCommand
   .command('audit')
-  .description('Fetch PII audit events for configured wallet')
-  .option('--user-id <wallet>', 'Wallet / user id (defaults to config wallet)')
-  .option('--start-date <iso>', 'Filter from date (client-side filter may apply)')
+  .description('Query workflow PII access events (which fields were present, allowed, stripped, and any violations)')
+  .option('--user-id <wallet>', 'Wallet / account id (defaults to config wallet)')
+  .option('--workflow-id <id>', 'Only events for this workflow')
+  .option('--violations', 'Only events where PII flowed into a step that declared requiresPII: []', false)
+  .option('--start-date <iso>', 'Only events at/after this timestamp (ISO 8601)')
   .option('--limit <n>', 'Max rows', '100')
+  .option('--json', 'Emit the raw { summary, events } JSON', false)
   .action(async (opts) => {
-    const spinner = ora('Loading audit…').start();
+    const spinner = opts.json ? null : ora('Loading audit…').start();
     try {
-      const res = (await api.piiAudit({
+      const res = await api.piiAudit({
         wallet: opts.userId,
+        workflowId: opts.workflowId,
+        violations: opts.violations,
         startDate: opts.startDate,
         limit: opts.limit,
-      })) as { events?: unknown[] };
-      spinner.succeed(`Events: ${res.events?.length ?? 0}`);
-      if (opts.startDate && res.events) {
-        const cutoff = new Date(opts.startDate).getTime();
-        res.events = res.events.filter((ev: unknown) => {
-          const ts = (ev as { timestamp?: string })?.timestamp;
-          return ts ? new Date(ts).getTime() >= cutoff : true;
-        });
+      });
+
+      const events = res.events ?? [];
+      const summary = res.summary ?? {
+        total: events.length,
+        violations: events.filter((e) => e.hadViolation).length,
+        workflows: [...new Set(events.map((e) => e.workflowId))],
+      };
+
+      spinner?.succeed(
+        `${summary.total} event(s) · ${summary.violations} violation(s) · ${summary.workflows.length} workflow(s)`,
+      );
+
+      if (opts.json) {
+        output.json(res);
+        return;
       }
-      output.json(res);
+
+      if (events.length === 0) {
+        output.info('No PII access events match this query.');
+        return;
+      }
+
+      const rows = events.map((e) => [
+        e.timestamp,
+        e.workflowId,
+        e.stepName || e.stepId,
+        (e.piiFieldsPresent ?? []).join(',') || '-',
+        (e.piiFieldsStripped ?? []).join(',') || '-',
+        e.hadViolation ? chalk.red('⚠ yes') : 'no',
+      ]);
+      output.printTable(
+        ['Timestamp', 'Workflow', 'Step', 'Present', 'Stripped', 'Violation'],
+        rows,
+        { truncate: 48 },
+      );
+
+      if (summary.violations > 0) {
+        output.warn(
+          `${summary.violations} violation(s): PII reached a step that declared requiresPII: []. Re-run with --violations to isolate them.`,
+        );
+      }
     } catch (e) {
-      spinner.fail((e as Error).message);
+      spinner?.fail((e as Error).message);
+      if (e instanceof ApiError && (e.statusCode === 401 || e.statusCode === 403)) {
+        console.error(
+          chalk.yellow(
+            'This endpoint needs an API key with the pii:audit scope, and the wallet must match the key owner. Contact your Treza account team.',
+          ),
+        );
+      }
       process.exit(1);
     }
   });

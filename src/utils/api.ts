@@ -258,11 +258,42 @@ export async function piiConsentRevoke(consentId: string): Promise<unknown> {
   });
 }
 
-export async function piiAudit(params: { wallet?: string; startDate?: string; limit?: string }): Promise<unknown> {
-  const wallet = params.wallet || getWalletAddress();
-  const q: Record<string, string> = { walletAddress: wallet, limit: params.limit || '100' };
+export interface PiiAuditEvent {
+  eventId: string;
+  workflowId: string;
+  workflowRunId: string;
+  stepId: string;
+  stepName: string;
+  piiFieldsPresent: string[];
+  piiFieldsAllowed: string[];
+  piiFieldsStripped: string[];
+  hadViolation: boolean;
+  timestamp: string;
+  account?: string;
+  walletAddress?: string;
+}
+
+export interface PiiAuditResponse {
+  summary: { total: number; violations: number; workflows: string[] };
+  events: PiiAuditEvent[];
+}
+
+export async function piiAudit(params: {
+  wallet?: string;
+  workflowId?: string;
+  violations?: boolean;
+  startDate?: string;
+  limit?: string;
+}): Promise<PiiAuditResponse> {
+  // `account` is the canonical tenant param (legacy `walletAddress` still
+  // accepted server-side). Reads require an API key with the pii:audit scope
+  // whose account matches the x-treza-wallet header sent by apiRequest().
+  const account = params.wallet || getWalletAddress();
+  const q: Record<string, string> = { account, limit: params.limit || '100' };
+  if (params.workflowId) q.workflowId = params.workflowId;
+  if (params.violations) q.violations = 'true';
   if (params.startDate) q.startDate = params.startDate;
-  return apiRequest('/api/pii/audit', { params: q });
+  return apiRequest<PiiAuditResponse>('/api/pii/audit', { params: q });
 }
 
 /** KYC → PII bridge (verified proof in DynamoDB + encrypted PII row). */
